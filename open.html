@@ -202,11 +202,12 @@
 
     <div class="actions">
       <a class="button primary" id="open-app" href="#">Open in Identity Wallet</a>
+      <button type="button" id="copy-app-link">Copy App Link</button>
       <button type="button" id="copy-link">Copy Link</button>
       <a class="button" href="./">Support</a>
     </div>
 
-    <p class="note">If the app is not installed, keep this page open as a lightweight preview.</p>
+    <p class="note">If the app does not open, copy the app link and paste it in Exchange. If the app is not installed, keep this page open as a lightweight preview.</p>
   </main>
 
   <script>
@@ -238,18 +239,32 @@
     setText("prompt", fields.prompt);
 
     const openApp = document.getElementById("open-app");
+    const copyAppLink = document.getElementById("copy-app-link");
+    let appOpenURL = "";
     if (payload) {
-      openApp.href = "identitywallet://open?payload=" + encodeURIComponent(payload);
+      appOpenURL = "identitywallet://open?payload=" + encodeURIComponent(payload);
+      openApp.href = appOpenURL;
     } else {
       openApp.hidden = true;
+      copyAppLink.hidden = true;
     }
 
-    document.getElementById("copy-link").addEventListener("click", async () => {
+    async function copyText(value) {
       try {
-        await navigator.clipboard.writeText(window.location.href);
+        await navigator.clipboard.writeText(value);
       } catch (_) {
-        window.prompt("Copy this link", window.location.href);
+        window.prompt("Copy this link", value);
       }
+    }
+
+    copyAppLink.addEventListener("click", async () => {
+      if (appOpenURL) {
+        await copyText(appOpenURL);
+      }
+    });
+
+    document.getElementById("copy-link").addEventListener("click", async () => {
+      await copyText(window.location.href);
     });
   </script>
 </body>
