@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Identity Wallet Support</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0d0d0c;
+      --fg: #f4f1ea;
+      --muted: #a7a198;
+      --line: #34312b;
+      --accent: #c9ff3d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.65;
+    }
+    main {
+      width: min(720px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 72px 0;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(32px, 7vw, 64px);
+      line-height: 0.95;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+    h2 {
+      margin: 40px 0 8px;
+      font-size: 16px;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    p, li { color: var(--muted); }
+    a { color: var(--fg); text-decoration-color: var(--accent); text-underline-offset: 4px; }
+    .panel {
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 24px 0;
+      margin-top: 32px;
+    }
+    .stamp {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      padding: 6px 10px;
+      color: var(--accent);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <span class="stamp">Support</span>
+    <h1>Identity Wallet</h1>
+    <p>Identity Wallet is a local-first iPhone app for creating, editing, and sharing an Open Wallet profile.</p>
+
+    <section class="panel">
+      <h2>Help</h2>
+      <p>If you need support, report a problem or request help through the public issue tracker.</p>
+      <p><a href="https://github.com/blessing1031r-dotcom/identity-wallet-support/issues">Open a support issue</a></p>
+    </section>
+
+    <section>
+      <h2>Privacy</h2>
+      <p>The current app is designed as a local-first MVP. It does not require an account and does not collect data on a developer server.</p>
+      <p><a href="./privacy.html">Read the privacy policy</a></p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Identity Wallet Privacy Policy</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0d0d0c;
+      --fg: #f4f1ea;
+      --muted: #a7a198;
+      --line: #34312b;
+      --accent: #c9ff3d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.65;
+    }
+    main {
+      width: min(760px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 72px 0;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(32px, 7vw, 56px);
+      line-height: 1;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+    h2 {
+      margin: 40px 0 8px;
+      font-size: 16px;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    p, li { color: var(--muted); }
+    a { color: var(--fg); text-decoration-color: var(--accent); text-underline-offset: 4px; }
+    .date {
+      color: var(--accent);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="date">Effective date: July 9, 2026</p>
+    <h1>Privacy Policy</h1>
+    <p>This policy applies to Identity Wallet.</p>
+
+    <h2>Data Collection</h2>
+    <p>Identity Wallet does not collect personal data on a developer server in the current local-first MVP.</p>
+
+    <h2>On-Device Sources</h2>
+    <p>If you grant access, the app may use on-device photo metadata, current location availability, and contact metadata counts to create local Open Wallet draft suggestions. These summaries stay on the device.</p>
+
+    <h2>No Account or Tracking</h2>
+    <p>The current app does not require an account, does not include third-party analytics, and does not use data for tracking.</p>
+
+    <h2>Sharing</h2>
+    <p>When you use the QR/share flow, only the Open Wallet payload you choose to share is included. Closed Wallet content is not included in the shared payload.</p>
+
+    <h2>Contact</h2>
+    <p>For questions or support, use the <a href="https://github.com/blessing1031r-dotcom/identity-wallet-support/issues">support issue tracker</a>.</p>
+  </main>
+</body>
+</html>
