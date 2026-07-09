@@ -127,6 +127,40 @@
       gap: 12px;
       margin-top: 24px;
     }
+    .openers {
+      margin-top: 24px;
+    }
+    .opener-list {
+      display: grid;
+      gap: 10px;
+    }
+    .opener {
+      padding: 15px 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #0c0c0b;
+    }
+    .opener span {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    .opener strong {
+      display: block;
+      color: var(--fg);
+      font-size: 16px;
+      line-height: 1.35;
+    }
+    .opener p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
     a.button,
     button {
       width: 100%;
@@ -200,6 +234,11 @@
       Open Wallet preview data is missing from this link.
     </section>
 
+    <section class="openers" id="openers" hidden>
+      <p class="label">Questions</p>
+      <div class="opener-list" id="opener-list"></div>
+    </section>
+
     <div class="actions">
       <a class="button primary" id="open-app" href="#">Open in Identity Wallet</a>
       <button type="button" id="copy-app-link">Copy App Link</button>
@@ -213,15 +252,42 @@
   <script>
     const params = new URLSearchParams(window.location.search);
     const payload = params.get("payload") || "";
-
+    const questionPrompts = {
+      Film: "最近映画見た？",
+      Book: "好きな本ある？",
+      Place: "よく行く場所ある？",
+      Music: "最近なに聴いてる？",
+      Tools: "最近よく使う道具は？",
+      Work: "仕事で削らないことは？",
+      Now: "最近、何に時間を使ってる？",
+      Brand: "好きなブランドある？",
+      Hobby: "休みの日なにしてる？"
+    };
+    const firstQuestionLabel = (params.get("questions") || "").split(",")[0]?.trim() || "";
     const fields = {
       name: params.get("name") || "Open Wallet",
       handle: params.get("handle") || "",
       line: params.get("line") || "",
       role: params.get("role") || "",
       city: params.get("city") || "",
-      prompt: params.get("prompt") || "Scan to open"
+      prompt: params.get("prompt") || questionPrompts[firstQuestionLabel] || "Scan to open"
     };
+    const legacyOpeners = params.getAll("opener")
+      .map((value) => {
+        const [label = "", prompt = "", answer = ""] = value.split("\t");
+        return { label, prompt, answer };
+      })
+      .filter((entry) => entry.prompt || entry.answer);
+    const questionOpeners = (params.get("questions") || "")
+      .split(",")
+      .map((label) => label.trim())
+      .filter(Boolean)
+      .map((label) => ({
+        label,
+        prompt: questionPrompts[label] || fields.prompt || "Open Wallet",
+        answer: ""
+      }));
+    const openers = legacyOpeners.length ? legacyOpeners : questionOpeners;
 
     function setText(id, value) {
       document.getElementById(id).textContent = value;
@@ -237,6 +303,29 @@
     setText("role", fields.role || "-");
     setText("city", fields.city || "-");
     setText("prompt", fields.prompt);
+
+    const openerSection = document.getElementById("openers");
+    const openerList = document.getElementById("opener-list");
+    openerSection.hidden = openers.length === 0;
+    for (const entry of openers) {
+      const item = document.createElement("article");
+      item.className = "opener";
+
+      const label = document.createElement("span");
+      label.textContent = entry.label || "Question";
+
+      const prompt = document.createElement("strong");
+      prompt.textContent = entry.prompt || "Open Wallet";
+
+      const answer = document.createElement("p");
+      answer.textContent = entry.answer;
+
+      item.append(label, prompt);
+      if (entry.answer) {
+        item.append(answer);
+      }
+      openerList.append(item);
+    }
 
     const openApp = document.getElementById("open-app");
     const copyAppLink = document.getElementById("copy-app-link");
