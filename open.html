@@ -417,6 +417,7 @@
         ? Array.from(graphemeSegmenter.segment(text), (entry) => entry.segment)
         : [...text];
     };
+    const utf8Encoder = new TextEncoder();
     const limit = (value, maximum) => {
       const text = typeof value === "string" ? value : "";
       return graphemes(text.trim()).slice(0, maximum).join("");
@@ -467,7 +468,11 @@
           return { t: item.t.trim() };
         });
         if (items.some((item) => item === null)) return null;
-        return { k: section.k, t: section.t.trim(), i: items };
+        return {
+          k: sectionKinds.has(section.k) ? section.k : "custom",
+          t: section.t.trim(),
+          i: items
+        };
       });
 
       const workItems = profile.w.map((item) => {
@@ -891,11 +896,39 @@
       return draft;
     }
 
-    function updateAnswerDraft() {
-      const inputCharacters = graphemes(answerInput.value);
-      if (inputCharacters.length > maximumAnswerDraftCharacters) {
-        answerInput.value = inputCharacters.slice(0, maximumAnswerDraftCharacters).join("");
+    function boundedAnswerDraftInput(value) {
+      let result = "";
+      let characterCount = 0;
+      let scalarCount = 0;
+      let utf8ByteCount = 0;
+      let percentEncodedCount = 0;
+
+      for (const character of graphemes(value)) {
+        const characterScalarCount = [...character].length;
+        const characterUTF8ByteCount = utf8Encoder.encode(character).byteLength;
+        let characterPercentEncodedCount = 0;
+        try {
+          characterPercentEncodedCount = encodeURIComponent(character).length;
+        } catch (_) {
+          break;
+        }
+        if (characterCount >= maximumAnswerDraftCharacters
+          || scalarCount + characterScalarCount > maximumAnswerDraftUnicodeScalars
+          || utf8ByteCount + characterUTF8ByteCount > maximumAnswerDraftUTF8Bytes
+          || percentEncodedCount + characterPercentEncodedCount > maximumAnswerDraftPercentEncodedCharacters) break;
+
+        result += character;
+        characterCount += 1;
+        scalarCount += characterScalarCount;
+        utf8ByteCount += characterUTF8ByteCount;
+        percentEncodedCount += characterPercentEncodedCount;
       }
+      return result;
+    }
+
+    function updateAnswerDraft() {
+      const boundedInput = boundedAnswerDraftInput(answerInput.value);
+      if (answerInput.value !== boundedInput) answerInput.value = boundedInput;
       answerCount.textContent = `${graphemes(answerInput.value).length}/${maximumAnswerDraftCharacters}`;
       const draft = validatedAnswerDraft(answerInput.value);
       const answerURL = draft ? makeAppOpenURL(draft) : "";
