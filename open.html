@@ -195,6 +195,14 @@
       gap: 10px;
       margin-top: 20px;
     }
+    .app-open-recovery {
+      margin-top: 18px;
+      padding: 16px;
+      border: 1px solid var(--line);
+    }
+    .app-open-recovery .note {
+      margin: 8px 0 0;
+    }
     .openers {
       margin-top: 24px;
     }
@@ -338,16 +346,20 @@
         <span>Your Answer</span>
         <span id="answer-count">0/160</span>
       </label>
-      <textarea id="answer-input" maxlength="160" rows="4"></textarea>
+      <textarea id="answer-input" rows="4"></textarea>
       <p class="note">Nothing is added to your Open Wallet until you save in the app.</p>
       <div class="answer-actions">
         <a class="button primary disabled" id="continue-answer" href="#" aria-disabled="true">Continue in Identity Wallet</a>
-        <button type="button" id="copy-answer-link" disabled>Copy Answer Link</button>
+        <button type="button" id="copy-answer-link" disabled>Copy Continue Link</button>
         <button type="button" id="cancel-answer">Cancel</button>
+      </div>
+      <div class="app-open-recovery" id="app-open-recovery" role="status" aria-live="polite" tabindex="-1" hidden>
+        <p class="label">Identity Wallet Did Not Open</p>
+        <p class="note">Identity Wallet is required to save this answer. Keep this page open or copy the continue link and open it after the app is installed.</p>
       </div>
     </section>
 
-    <div class="actions">
+    <div class="actions" id="wallet-actions">
       <button class="primary" type="button" id="start-answer" hidden>Answer This Question</button>
       <a class="button primary" id="open-app" href="#">Open in Identity Wallet</a>
       <button type="button" id="copy-app-link">Copy App Link</button>
@@ -381,10 +393,33 @@
     };
     const maximumEncodedPayloadCharacters = 400_000;
     const maximumDecodedPayloadBytes = 256_000;
+    const maximumAnswerDraftCharacters = 160;
+    const maximumAnswerDraftUnicodeScalars = 640;
+    const maximumAnswerDraftUTF8Bytes = 2_048;
+    const maximumAnswerDraftPercentEncodedCharacters = 6_144;
     const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+    const isOptionalString = (value) => value === undefined || value === null || typeof value === "string";
+    const isStringArray = (value) => Array.isArray(value) && value.every((item) => typeof item === "string");
+    const isUUID = (value) => typeof value === "string"
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+    const isISO8601Date = (value) => typeof value === "string"
+      && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value)
+      && !Number.isNaN(Date.parse(value));
+    const coverMoods = new Set(["editorial", "noir", "gallery", "minimal", "warm", "raw"]);
+    const signalKinds = new Set(["mbti", "zodiac", "archetype", "mood", "workingStyle", "socialBattery", "favoriteMedium", "custom"]);
+    const sectionKinds = new Set(["films", "books", "music", "brands", "places", "hobbies", "currentObsessions", "objects", "influences", "sunday", "tools", "custom"]);
+    const graphemeSegmenter = typeof Intl?.Segmenter === "function"
+      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+      : null;
+    const graphemes = (value) => {
+      const text = typeof value === "string" ? value : "";
+      return graphemeSegmenter
+        ? Array.from(graphemeSegmenter.segment(text), (entry) => entry.segment)
+        : [...text];
+    };
     const limit = (value, maximum) => {
       const text = typeof value === "string" ? value : "";
-      return [...text.trim()].slice(0, maximum).join("");
+      return graphemes(text.trim()).slice(0, maximum).join("");
     };
 
     async function decompressPayload(bytes, format) {
@@ -413,39 +448,54 @@
 
     function normalizeCompactProfile(profile) {
       if (!isRecord(profile)) return null;
-      if (!["n", "h", "r", "c", "o"].every((key) => typeof profile[key] === "string")) return null;
-      if (![profile.e, profile.w, profile.k].every(Array.isArray)) return null;
-      if ([profile.e, profile.w, profile.k].some((items) => items.length > 12)) return null;
+      if (!["n", "h", "r", "c", "o", "a", "m"].every((key) => typeof profile[key] === "string")) return null;
+      if (!isRecord(profile.t) || ![profile.t.i, profile.t.n, profile.t.m].every((value) => typeof value === "string")) return null;
+      if (![profile.s, profile.e, profile.w, profile.k].every(Array.isArray)) return null;
+      if ([profile.s, profile.e, profile.w, profile.k].some((items) => items.length > 12)) return null;
+
+      const signals = profile.s.map((signal) => {
+        if (!isRecord(signal) || ![signal.k, signal.l, signal.v].every((value) => typeof value === "string")) return null;
+        return { k: signal.k, l: limit(signal.l, 32), v: limit(signal.v, 44) };
+      });
 
       const sections = profile.e.map((section) => {
         if (!isRecord(section) || typeof section.k !== "string" || typeof section.t !== "string" || !Array.isArray(section.i)) return null;
+        if (!isOptionalString(section.b)) return null;
         if (section.i.length > 4) return null;
         const items = section.i.map((item) => {
-          if (!isRecord(item) || typeof item.t !== "string") return null;
-          return { t: limit(item.t, 160) };
+          if (!isRecord(item) || typeof item.t !== "string" || !isOptionalString(item.b) || !isOptionalString(item.n) || !isStringArray(item.g)) return null;
+          return { t: item.t.trim() };
         });
         if (items.some((item) => item === null)) return null;
-        return { k: section.k, t: limit(section.t, 72), i: items };
+        return { k: section.k, t: section.t.trim(), i: items };
       });
 
       const workItems = profile.w.map((item) => {
-        if (!isRecord(item) || ![item.t, item.r, item.d].every((value) => typeof value === "string")) return null;
-        return { t: limit(item.t, 160), r: limit(item.r, 160), d: limit(item.d, 160) };
+        if (!isRecord(item)
+          || ![item.t, item.r, item.d].every((value) => typeof value === "string")
+          || !isOptionalString(item.u)
+          || !isOptionalString(item.y)
+          || !isStringArray(item.g)) return null;
+        return { t: item.t.trim(), r: item.r.trim(), d: item.d.trim() };
       });
 
       const hooks = profile.k.map((hook) => {
         if (!isRecord(hook) || typeof hook.p !== "string" || typeof hook.a !== "string") return null;
-        if (hook.l !== undefined && typeof hook.l !== "string") return null;
-        return { p: limit(hook.p, 72), a: limit(hook.a, 160), l: limit(hook.l, 14) };
+        if (!isOptionalString(hook.l)) return null;
+        return { p: hook.p.trim(), a: hook.a.trim(), l: (hook.l || "").trim() };
       });
 
-      if ([...sections, ...workItems, ...hooks].some((item) => item === null)) return null;
+      if ([...signals, ...sections, ...workItems, ...hooks].some((item) => item === null)) return null;
       return {
         n: limit(profile.n, 80),
         h: limit(profile.h, 48),
         r: limit(profile.r, 64),
         c: limit(profile.c, 48),
         o: limit(profile.o, 100),
+        a: limit(profile.a, 4),
+        m: profile.m,
+        t: { i: profile.t.i, n: profile.t.n, m: profile.t.m },
+        s: signals,
         e: sections,
         w: workItems,
         k: hooks
@@ -459,42 +509,91 @@
         profile.handle,
         profile.role,
         profile.city,
-        profile.oneLiner
+        profile.oneLiner,
+        profile.avatarSymbol,
+        profile.coverMood
       ];
       if (!requiredStrings.every((value) => typeof value === "string")) return null;
-      if (![profile.sections, profile.workItems, profile.conversationHooks].every(Array.isArray)) return null;
+      if (!isRecord(profile.theme)
+        || ![profile.theme.id, profile.theme.name, profile.theme.mood].every((value) => typeof value === "string")) return null;
+      if (!coverMoods.has(profile.coverMood) || !coverMoods.has(profile.theme.mood)) return null;
+      if (![profile.signals, profile.sections, profile.workItems, profile.conversationHooks].every(Array.isArray)) return null;
+      if ([profile.signals, profile.sections, profile.workItems, profile.conversationHooks].some((items) => items.length > 12)) return null;
+
+      const signals = profile.signals.map((signal) => {
+        if (!isRecord(signal)
+          || !isUUID(signal.id)
+          || ![signal.kind, signal.label, signal.value].every((value) => typeof value === "string")
+          || !signalKinds.has(signal.kind)) return null;
+        return { k: signal.kind, l: signal.label, v: signal.value };
+      });
+      const sections = profile.sections.map((section) => {
+        if (!isRecord(section)
+          || !isUUID(section.id)
+          || typeof section.kind !== "string"
+          || typeof section.title !== "string"
+          || !isOptionalString(section.subtitle)
+          || !isOptionalString(section.visibility)
+          || (section.visibility != null && section.visibility !== "localOnly")
+          || !sectionKinds.has(section.kind)
+          || !Array.isArray(section.items)
+          || section.items.length > 4) return null;
+        const items = section.items.map((item) => {
+          if (!isRecord(item)
+            || !isUUID(item.id)
+            || typeof item.title !== "string"
+            || !isOptionalString(item.subtitle)
+            || !isOptionalString(item.note)
+            || !isStringArray(item.tags)) return null;
+          return { t: item.title, b: item.subtitle, n: item.note, g: item.tags };
+        });
+        if (items.some((item) => item === null)) return null;
+        return { k: section.kind, t: section.title, b: section.subtitle, i: items };
+      });
+      const workItems = profile.workItems.map((item) => {
+        if (!isRecord(item)
+          || !isUUID(item.id)
+          || ![item.title, item.role, item.description].every((value) => typeof value === "string")
+          || !isOptionalString(item.link)
+          || !isOptionalString(item.year)
+          || !isStringArray(item.tags)) return null;
+        return { t: item.title, r: item.role, d: item.description, u: item.link, y: item.year, g: item.tags };
+      });
+      const hooks = profile.conversationHooks.map((hook) => {
+        if (!isRecord(hook)
+          || !isUUID(hook.id)
+          || ![hook.prompt, hook.answer].every((value) => typeof value === "string")
+          || !isOptionalString(hook.questionLabel)
+          || !isOptionalString(hook.sourceSuggestionID)) return null;
+        return { p: hook.prompt, a: hook.answer, l: hook.questionLabel };
+      });
+      if ([...signals, ...sections, ...workItems, ...hooks].some((item) => item === null)) return null;
       return normalizeCompactProfile({
         n: profile.displayName,
         h: profile.handle,
         r: profile.role,
         c: profile.city,
         o: profile.oneLiner,
-        e: profile.sections.map((section) => ({
-          k: section?.kind,
-          t: section?.title,
-          i: Array.isArray(section?.items) ? section.items.map((item) => ({ t: item?.title })) : null
-        })),
-        w: profile.workItems.map((item) => ({
-          t: item?.title,
-          r: item?.role,
-          d: item?.description
-        })),
-        k: profile.conversationHooks.map((hook) => ({
-          p: hook?.prompt,
-          a: hook?.answer,
-          l: hook?.questionLabel
-        }))
+        a: profile.avatarSymbol,
+        m: profile.coverMood,
+        t: { i: profile.theme.id, n: profile.theme.name, m: profile.theme.mood },
+        s: signals,
+        e: sections,
+        w: workItems,
+        k: hooks
       });
     }
 
     function normalizeDecodedPayload(value) {
       if (!isRecord(value)) return null;
       if (value.v === 1) {
+        if (!isISO8601Date(value.x)) return null;
         if (value.f !== undefined && typeof value.f !== "string") return null;
         const profile = normalizeCompactProfile(value.p);
         return profile ? { v: 1, p: profile, f: limit(value.f, 14) } : null;
       }
       if (value.version === 1) {
+        if (!isISO8601Date(value.exportedAt)) return null;
         const profile = normalizeLegacyProfile(value.profile);
         return profile ? { v: 1, p: profile, f: "" } : null;
       }
@@ -562,6 +661,14 @@
       if (prompt.includes("日曜")) return "Sunday";
       if (prompt.includes("時間") || prompt.includes("作って") || prompt.includes("最近")) return "Now";
       return "Ask";
+    }
+
+    function normalizePayloadOpener(entry) {
+      return {
+        label: limit(entry.label, 14),
+        prompt: limit(entry.prompt, 72),
+        answer: limit(entry.answer, 160)
+      };
     }
 
     function makePayloadOpeners(profile) {
@@ -634,7 +741,9 @@
         if (!consumedExplicitIndexes.has(index)) appendFinal(entry);
       });
       fallbackEntries.forEach(appendFinal);
-      return entries;
+      return entries
+        .map(normalizePayloadOpener)
+        .filter((entry) => entry.label && entry.prompt && entry.answer);
     }
 
     function labelsMatch(left, right) {
@@ -749,12 +858,19 @@
     const continueAnswer = document.getElementById("continue-answer");
     const copyAnswerLink = document.getElementById("copy-answer-link");
     const cancelAnswer = document.getElementById("cancel-answer");
+    const appOpenRecovery = document.getElementById("app-open-recovery");
+    const walletActions = document.getElementById("wallet-actions");
+    const previewNote = document.getElementById("preview-note");
     const canDraftAnswer = Boolean(focusedOpener) && !hasInvalidShare;
+    const copyContinueLinkLabel = "Copy Continue Link";
+    let appOpenRecoveryTimer = null;
+    let didLeavePageForApp = false;
     startAnswer.hidden = !canDraftAnswer;
     answerPrompt.textContent = focusedOpener?.prompt || "";
 
     function makeAppOpenURL(answerDraft = "") {
       if (!payload || hasInvalidShare) return "";
+      if (answerDraft && validatedAnswerDraft(answerDraft) !== answerDraft) return "";
       const appItems = [["payload", payload]];
       if (answerDraft) appItems.push([answerDraftParameter, answerDraft]);
       return "identitywallet://open?" + appItems
@@ -762,13 +878,26 @@
         .join("&");
     }
 
-    function updateAnswerDraft() {
-      const inputCharacters = [...answerInput.value];
-      if (inputCharacters.length > 160) {
-        answerInput.value = inputCharacters.slice(0, 160).join("");
+    function validatedAnswerDraft(value) {
+      const draft = value.trim();
+      if (!draft || graphemes(draft).length > maximumAnswerDraftCharacters) return "";
+      if ([...draft].length > maximumAnswerDraftUnicodeScalars) return "";
+      if (new TextEncoder().encode(draft).byteLength > maximumAnswerDraftUTF8Bytes) return "";
+      try {
+        if (encodeURIComponent(draft).length > maximumAnswerDraftPercentEncodedCharacters) return "";
+      } catch (_) {
+        return "";
       }
-      answerCount.textContent = `${[...answerInput.value].length}/160`;
-      const draft = answerInput.value.trim();
+      return draft;
+    }
+
+    function updateAnswerDraft() {
+      const inputCharacters = graphemes(answerInput.value);
+      if (inputCharacters.length > maximumAnswerDraftCharacters) {
+        answerInput.value = inputCharacters.slice(0, maximumAnswerDraftCharacters).join("");
+      }
+      answerCount.textContent = `${graphemes(answerInput.value).length}/${maximumAnswerDraftCharacters}`;
+      const draft = validatedAnswerDraft(answerInput.value);
       const answerURL = draft ? makeAppOpenURL(draft) : "";
       continueAnswer.href = answerURL || "#";
       continueAnswer.classList.toggle("disabled", !answerURL);
@@ -777,20 +906,59 @@
       return answerURL;
     }
 
+    function markAppOpenDeparture() {
+      didLeavePageForApp = true;
+      appOpenRecovery.hidden = true;
+      if (appOpenRecoveryTimer !== null) {
+        window.clearTimeout(appOpenRecoveryTimer);
+        appOpenRecoveryTimer = null;
+      }
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) markAppOpenDeparture();
+    });
+    window.addEventListener("pagehide", markAppOpenDeparture);
+
     startAnswer.addEventListener("click", () => {
       startAnswer.hidden = true;
+      walletActions.hidden = true;
+      previewNote.hidden = true;
+      appOpenRecovery.hidden = true;
       answerCompose.hidden = false;
       answerInput.focus();
       answerCompose.scrollIntoView({ block: "start" });
     });
-    answerInput.addEventListener("input", updateAnswerDraft);
+    answerInput.addEventListener("input", () => {
+      copyAnswerLink.textContent = copyContinueLinkLabel;
+      updateAnswerDraft();
+    });
     continueAnswer.addEventListener("click", (event) => {
-      if (!updateAnswerDraft()) event.preventDefault();
+      if (!updateAnswerDraft()) {
+        event.preventDefault();
+        return;
+      }
+      appOpenRecovery.hidden = true;
+      didLeavePageForApp = false;
+      if (appOpenRecoveryTimer !== null) window.clearTimeout(appOpenRecoveryTimer);
+      appOpenRecoveryTimer = window.setTimeout(() => {
+        appOpenRecoveryTimer = null;
+        if (!didLeavePageForApp && !document.hidden && !answerCompose.hidden) {
+          appOpenRecovery.hidden = false;
+          appOpenRecovery.focus();
+        }
+      }, 1200);
     });
     cancelAnswer.addEventListener("click", () => {
       answerInput.value = "";
       updateAnswerDraft();
+      if (appOpenRecoveryTimer !== null) window.clearTimeout(appOpenRecoveryTimer);
+      appOpenRecoveryTimer = null;
+      copyAnswerLink.textContent = copyContinueLinkLabel;
       answerCompose.hidden = true;
+      appOpenRecovery.hidden = true;
+      walletActions.hidden = false;
+      previewNote.hidden = false;
       startAnswer.hidden = !canDraftAnswer;
       startAnswer.focus();
     });
@@ -813,8 +981,10 @@
     async function copyText(value) {
       try {
         await navigator.clipboard.writeText(value);
+        return true;
       } catch (_) {
         window.prompt("Copy this link", value);
+        return false;
       }
     }
 
@@ -826,7 +996,10 @@
 
     copyAnswerLink.addEventListener("click", async () => {
       const answerURL = updateAnswerDraft();
-      if (answerURL) await copyText(answerURL);
+      if (answerURL) {
+        const didCopy = await copyText(answerURL);
+        if (didCopy) copyAnswerLink.textContent = "Continue Link Copied";
+      }
     });
 
     document.getElementById("copy-link").addEventListener("click", async () => {
