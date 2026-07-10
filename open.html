@@ -63,13 +63,25 @@
     }
     h1 {
       margin: 42px 0 12px;
+      min-width: 0;
+      overflow-wrap: anywhere;
       font-size: clamp(52px, 18vw, 96px);
       line-height: 0.86;
       letter-spacing: 0;
       text-transform: uppercase;
     }
+    h1.compact {
+      font-size: clamp(36px, 12vw, 64px);
+      line-height: 0.95;
+    }
+    h1.dense {
+      font-size: clamp(26px, 8vw, 44px);
+      line-height: 1;
+    }
     .handle {
       margin: 0 0 28px;
+      min-width: 0;
+      overflow-wrap: anywhere;
       color: #6f6b63;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       font-size: 14px;
@@ -79,6 +91,8 @@
     }
     .line {
       margin: 0 0 28px;
+      min-width: 0;
+      overflow-wrap: anywhere;
       font-size: 19px;
       font-weight: 700;
       color: #35332d;
@@ -86,7 +100,7 @@
     .meta {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1px;
+      gap: 16px;
       border-top: 1px solid #d8d4ca;
       color: #151512;
     }
@@ -105,7 +119,9 @@
     .meta strong {
       display: block;
       margin-top: 6px;
-      font-size: 18px;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 16px;
       line-height: 1.15;
     }
     .strip {
@@ -121,6 +137,7 @@
       font-weight: 800;
       letter-spacing: 0.24em;
       text-transform: uppercase;
+      overflow-wrap: anywhere;
     }
     .actions {
       display: grid;
@@ -140,6 +157,10 @@
       border-radius: 14px;
       background: #0c0c0b;
     }
+    .opener.focused {
+      border-color: var(--accent);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
     .opener span {
       display: block;
       margin-bottom: 8px;
@@ -155,11 +176,13 @@
       color: var(--fg);
       font-size: 16px;
       line-height: 1.35;
+      overflow-wrap: anywhere;
     }
     .opener p {
       margin: 8px 0 0;
       color: var(--muted);
       font-size: 13px;
+      overflow-wrap: anywhere;
     }
     a.button,
     button {
@@ -235,7 +258,7 @@
     </section>
 
     <section class="openers" id="openers" hidden>
-      <p class="label">Questions</p>
+      <p class="label" id="questions-label">Questions</p>
       <div class="opener-list" id="opener-list"></div>
     </section>
 
@@ -250,7 +273,10 @@
   </main>
 
   <script>
-    const params = new URLSearchParams(window.location.search);
+    (async () => {
+    const fragmentParams = new URLSearchParams(window.location.hash.slice(1));
+    const legacyQueryParams = new URLSearchParams(window.location.search);
+    const params = fragmentParams.has("payload") ? fragmentParams : legacyQueryParams;
     const payload = params.get("payload") || "";
     const questionPrompts = {
       Film: "最近映画見た？",
@@ -261,33 +287,264 @@
       Work: "仕事で削らないことは？",
       Now: "最近、何に時間を使ってる？",
       Brand: "好きなブランドある？",
-      Hobby: "休みの日なにしてる？"
+      Hobby: "休みの日なにしてる？",
+      Influence: "最近影響受けたものある？",
+      Object: "持ち歩いてるものある？",
+      Sunday: "理想の日曜ってどんな感じ？"
     };
-    const firstQuestionLabel = (params.get("questions") || "").split(",")[0]?.trim() || "";
+    const maximumEncodedPayloadCharacters = 400_000;
+    const maximumDecodedPayloadBytes = 256_000;
+    const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+    const limit = (value, maximum) => {
+      const text = typeof value === "string" ? value : "";
+      return [...text.trim()].slice(0, maximum).join("");
+    };
+
+    async function decompressPayload(bytes, format) {
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+      const reader = stream.getReader();
+      const chunks = [];
+      let total = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maximumDecodedPayloadBytes) {
+          await reader.cancel();
+          return null;
+        }
+        chunks.push(value);
+      }
+      const output = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        output.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return output;
+    }
+
+    function normalizeCompactProfile(profile) {
+      if (!isRecord(profile)) return null;
+      if (!["n", "h", "r", "c", "o"].every((key) => typeof profile[key] === "string")) return null;
+      if (![profile.e, profile.w, profile.k].every(Array.isArray)) return null;
+
+      const sections = profile.e.slice(0, 12).map((section) => {
+        if (!isRecord(section) || typeof section.k !== "string" || typeof section.t !== "string" || !Array.isArray(section.i)) return null;
+        const items = section.i.slice(0, 4).map((item) => {
+          if (!isRecord(item) || typeof item.t !== "string") return null;
+          return { t: limit(item.t, 56) };
+        });
+        if (items.some((item) => item === null)) return null;
+        return { k: section.k, t: limit(section.t, 72), i: items };
+      });
+
+      const workItems = profile.w.slice(0, 12).map((item) => {
+        if (!isRecord(item) || ![item.t, item.r, item.d].every((value) => typeof value === "string")) return null;
+        return { t: limit(item.t, 72), r: limit(item.r, 64), d: limit(item.d, 90) };
+      });
+
+      const hooks = profile.k.slice(0, 12).map((hook) => {
+        if (!isRecord(hook) || typeof hook.p !== "string" || typeof hook.a !== "string") return null;
+        return { p: limit(hook.p, 72), a: limit(hook.a, 90) };
+      });
+
+      if ([...sections, ...workItems, ...hooks].some((item) => item === null)) return null;
+      return {
+        n: limit(profile.n, 80),
+        h: limit(profile.h, 48),
+        r: limit(profile.r, 64),
+        c: limit(profile.c, 48),
+        o: limit(profile.o, 100),
+        e: sections,
+        w: workItems,
+        k: hooks
+      };
+    }
+
+    function normalizeLegacyProfile(profile) {
+      if (!isRecord(profile)) return null;
+      const requiredStrings = [
+        profile.displayName,
+        profile.handle,
+        profile.role,
+        profile.city,
+        profile.oneLiner
+      ];
+      if (!requiredStrings.every((value) => typeof value === "string")) return null;
+      if (![profile.sections, profile.workItems, profile.conversationHooks].every(Array.isArray)) return null;
+      return normalizeCompactProfile({
+        n: profile.displayName,
+        h: profile.handle,
+        r: profile.role,
+        c: profile.city,
+        o: profile.oneLiner,
+        e: profile.sections.map((section) => ({
+          k: section?.kind,
+          t: section?.title,
+          i: Array.isArray(section?.items) ? section.items.map((item) => ({ t: item?.title })) : null
+        })),
+        w: profile.workItems.map((item) => ({
+          t: item?.title,
+          r: item?.role,
+          d: item?.description
+        })),
+        k: profile.conversationHooks.map((hook) => ({
+          p: hook?.prompt,
+          a: hook?.answer
+        }))
+      });
+    }
+
+    function normalizeDecodedPayload(value) {
+      if (!isRecord(value)) return null;
+      if (value.v === 1) {
+        if (value.f !== undefined && typeof value.f !== "string") return null;
+        const profile = normalizeCompactProfile(value.p);
+        return profile ? { v: 1, p: profile, f: limit(value.f, 14) } : null;
+      }
+      if (value.version === 1) {
+        const profile = normalizeLegacyProfile(value.profile);
+        return profile ? { v: 1, p: profile, f: "" } : null;
+      }
+      return null;
+    }
+
+    async function decodeOpenWalletPayload(encoded) {
+      if (!encoded || encoded.length > maximumEncodedPayloadCharacters) return null;
+      try {
+        const isCompressed = encoded.startsWith("z.");
+        let base64 = (isCompressed ? encoded.slice(2) : encoded)
+          .replace(/-/g, "+")
+          .replace(/_/g, "/");
+        base64 += "=".repeat((4 - (base64.length % 4)) % 4);
+        const binary = window.atob(base64);
+        let bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        if (isCompressed) {
+          if (!window.DecompressionStream) return null;
+          let decompressed = null;
+          for (const format of ["deflate-raw", "deflate"]) {
+            try {
+              decompressed = await decompressPayload(bytes, format);
+              if (decompressed) break;
+            } catch (_) { }
+          }
+          if (!decompressed) return null;
+          bytes = decompressed;
+        } else if (bytes.byteLength > maximumDecodedPayloadBytes) {
+          return null;
+        }
+        return normalizeDecodedPayload(JSON.parse(new TextDecoder().decode(bytes)));
+      } catch (_) {
+        return null;
+      }
+    }
+
+    const sectionDetails = {
+      films: { label: "Film", prompt: questionPrompts.Film, priority: 0, primary: true },
+      books: { label: "Book", prompt: questionPrompts.Book, priority: 1, primary: true },
+      places: { label: "Place", prompt: questionPrompts.Place, priority: 2, primary: true },
+      currentObsessions: { label: "Now", prompt: questionPrompts.Now, priority: 3, primary: true },
+      tools: { label: "Tools", prompt: questionPrompts.Tools, priority: 5, primary: true },
+      music: { label: "Music", prompt: questionPrompts.Music, priority: 6, primary: true },
+      hobbies: { label: "Hobby", prompt: questionPrompts.Hobby, priority: 7, primary: false },
+      influences: { label: "Influence", prompt: questionPrompts.Influence, priority: 8, primary: false },
+      brands: { label: "Brand", prompt: questionPrompts.Brand, priority: 9, primary: false },
+      objects: { label: "Object", prompt: questionPrompts.Object, priority: 10, primary: false },
+      sunday: { label: "Sunday", prompt: questionPrompts.Sunday, priority: 11, primary: false },
+      custom: { label: "Custom", prompt: "Open Wallet", priority: 20, primary: false }
+    };
+
+    function hookLabel(prompt) {
+      if (prompt.includes("食") || prompt.includes("料理") || prompt.includes("ご飯") || prompt.includes("飯")) return "Food";
+      if (prompt.includes("映画")) return "Film";
+      if (prompt.includes("本")) return "Book";
+      if (prompt.includes("音楽") || prompt.includes("聴")) return "Music";
+      if (prompt.includes("場所") || prompt.includes("店") || prompt.includes("カフェ")) return "Place";
+      if (prompt.includes("人") || prompt.includes("つながり") || prompt.includes("紹介")) return "People";
+      if (prompt.includes("仕事")) return "Work";
+      if (prompt.includes("道具") || prompt.includes("ツール")) return "Tools";
+      if (prompt.includes("休み") || prompt.includes("趣味")) return "Hobby";
+      if (prompt.includes("影響")) return "Influence";
+      if (prompt.includes("持ち歩") || prompt.includes("持ち物")) return "Object";
+      if (prompt.includes("ブランド")) return "Brand";
+      if (prompt.includes("日曜")) return "Sunday";
+      if (prompt.includes("時間") || prompt.includes("作って") || prompt.includes("最近")) return "Now";
+      return "Ask";
+    }
+
+    function makePayloadOpeners(profile) {
+      const entries = [];
+      const normalize = (value) => (value || "").trim().toLowerCase().replace(/\s+/g, "");
+      const append = (entry) => {
+        if (entries.length >= 12) return;
+        const promptKey = normalize(entry.prompt);
+        const labelKey = normalize(entry.label);
+        if (!promptKey || entries.some((existing) => normalize(existing.prompt) === promptKey)) return;
+        if (labelKey !== "ask" && entries.some((existing) => normalize(existing.label) === labelKey)) return;
+        entries.push(entry);
+      };
+
+      const sections = (profile?.e || [])
+        .map((section, index) => ({ section, index, details: sectionDetails[section.k] || sectionDetails.custom }))
+        .sort((left, right) => left.details.priority - right.details.priority || left.index - right.index);
+      const appendSection = ({ section, details }) => {
+        const titles = (section.i || []).map((item) => (item.t || "").trim()).filter(Boolean).slice(0, 4);
+        if (!titles.length) return;
+        const customTitle = (section.t || "").trim();
+        append({
+          label: section.k === "custom" ? (customTitle || "Custom") : details.label,
+          prompt: section.k === "custom" ? (customTitle ? `${customTitle}は？` : titles[0]) : details.prompt,
+          answer: titles.join(" / ")
+        });
+      };
+
+      sections.filter((entry) => entry.details.primary).forEach(appendSection);
+
+      const work = (profile?.w || []).find((item) => (item.t || "").trim() || (item.d || "").trim());
+      if (work) {
+        const answer = [work.t, work.r, work.d].map((value) => (value || "").trim()).filter(Boolean).slice(0, 3).join(" / ");
+        append({ label: "Work", prompt: questionPrompts.Work, answer });
+      }
+
+      sections.filter((entry) => !entry.details.primary).forEach(appendSection);
+
+      for (const hook of profile?.k || []) {
+        const prompt = (hook.p || "").trim();
+        if (!prompt) continue;
+        append({
+          label: hookLabel(prompt),
+          prompt,
+          answer: (hook.a || "").trim() || (profile?.o || "").trim()
+        });
+      }
+
+      if (!entries.length && (profile?.o || "").trim()) {
+        append({ label: "Line", prompt: "何をしている人？", answer: profile.o.trim() });
+      }
+      return entries;
+    }
+
+    const decodedPayload = await decodeOpenWalletPayload(payload);
+    const compactProfile = decodedPayload?.p || null;
+    const payloadOpeners = makePayloadOpeners(compactProfile);
+    const embeddedFocusLabel = limit(decodedPayload?.f, 14);
+    const focusMatches = payloadOpeners.filter(
+      (entry) => limit(entry.label, 14).toLowerCase() === embeddedFocusLabel.toLowerCase()
+    );
+    const focusedOpener = embeddedFocusLabel && focusMatches.length === 1
+      ? { ...focusMatches[0], focused: true }
+      : null;
+    const listedOpeners = payloadOpeners.map((entry) => ({ ...entry, focused: false }));
+    const openers = focusedOpener ? [focusedOpener] : listedOpeners;
     const fields = {
-      name: params.get("name") || "Open Wallet",
-      handle: params.get("handle") || "",
-      line: params.get("line") || "",
-      role: params.get("role") || "",
-      city: params.get("city") || "",
-      prompt: params.get("prompt") || questionPrompts[firstQuestionLabel] || "Scan to open"
+      name: compactProfile?.n || "",
+      handle: compactProfile?.h || "",
+      line: compactProfile?.o || "",
+      role: compactProfile?.r || "",
+      city: compactProfile?.c || "",
+      prompt: focusedOpener?.prompt || payloadOpeners[0]?.prompt || "Scan to open"
     };
-    const legacyOpeners = params.getAll("opener")
-      .map((value) => {
-        const [label = "", prompt = "", answer = ""] = value.split("\t");
-        return { label, prompt, answer };
-      })
-      .filter((entry) => entry.prompt || entry.answer);
-    const questionOpeners = (params.get("questions") || "")
-      .split(",")
-      .map((label) => label.trim())
-      .filter(Boolean)
-      .map((label) => ({
-        label,
-        prompt: questionPrompts[label] || fields.prompt || "Open Wallet",
-        answer: ""
-      }));
-    const openers = legacyOpeners.length ? legacyOpeners : questionOpeners;
 
     function setText(id, value) {
       document.getElementById(id).textContent = value;
@@ -297,22 +554,26 @@
     document.getElementById("preview").hidden = !hasPreview;
     document.getElementById("empty").hidden = hasPreview;
 
-    setText("name", fields.name);
+    setText("name", fields.name || "Open Wallet");
     setText("handle", fields.handle);
     setText("line", fields.line);
     setText("role", fields.role || "-");
     setText("city", fields.city || "-");
     setText("prompt", fields.prompt);
+    const nameLength = [...fields.name].length;
+    document.getElementById("name").classList.toggle("compact", nameLength > 20 && nameLength <= 48);
+    document.getElementById("name").classList.toggle("dense", nameLength > 48);
 
     const openerSection = document.getElementById("openers");
     const openerList = document.getElementById("opener-list");
+    document.getElementById("questions-label").textContent = focusedOpener ? "Shared Question" : "Questions";
     openerSection.hidden = openers.length === 0;
     for (const entry of openers) {
       const item = document.createElement("article");
-      item.className = "opener";
+      item.className = entry.focused ? "opener focused" : "opener";
 
       const label = document.createElement("span");
-      label.textContent = entry.label || "Question";
+      label.textContent = entry.focused ? `Shared / ${entry.label}` : (entry.label || "Question");
 
       const prompt = document.createElement("strong");
       prompt.textContent = entry.prompt || "Open Wallet";
@@ -327,11 +588,18 @@
       openerList.append(item);
     }
 
+    if ((params.get("view") === "openers" || params.get("view") === "question" || focusedOpener) && openers.length > 0) {
+      window.requestAnimationFrame(() => openerSection.scrollIntoView({ block: "start" }));
+    }
+
     const openApp = document.getElementById("open-app");
     const copyAppLink = document.getElementById("copy-app-link");
     let appOpenURL = "";
     if (payload) {
-      appOpenURL = "identitywallet://open?payload=" + encodeURIComponent(payload);
+      const appItems = [["payload", payload]];
+      appOpenURL = "identitywallet://open?" + appItems
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join("&");
       openApp.href = appOpenURL;
     } else {
       openApp.hidden = true;
@@ -355,6 +623,7 @@
     document.getElementById("copy-link").addEventListener("click", async () => {
       await copyText(window.location.href);
     });
+    })();
   </script>
 </body>
 </html>

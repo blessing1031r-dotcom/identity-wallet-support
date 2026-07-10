@@ -58,16 +58,20 @@
     <p>This policy applies to Identity Wallet.</p>
 
     <h2>Data Collection</h2>
-    <p>Identity Wallet does not collect personal data on a developer server in the current local-first MVP.</p>
+    <p>Identity Wallet does not send selected photo content, recognized text, contact records, or location coordinates to a developer backend in the current local-first MVP.</p>
 
     <h2>On-Device Sources</h2>
-    <p>If you grant access, the app may use on-device photo metadata, current location availability, and contact metadata counts to create local Open Wallet draft suggestions. These summaries stay on the device.</p>
+    <p>If you select photos or grant optional access, the app may analyze selected photo content, current location availability, and contact metadata counts on the device to create Open Wallet draft suggestions. Selected-photo analysis can detect text and broad visual categories. Raw photo content, raw recognized text, raw image labels, contact names, and location coordinates are not added to the Open Wallet profile. Before applying a draft, you can include or remove each suggestion and edit the visible identity line. Only included suggestions and the identity line you apply may become part of your Open Wallet.</p>
 
     <h2>No Account or Tracking</h2>
     <p>The current app does not require an account, does not include third-party analytics, and does not use data for tracking.</p>
 
     <h2>Sharing</h2>
-    <p>When you use the QR/share flow, only the Open Wallet payload and preview fields you choose to share are included in the shared link. Closed Wallet content is not included in the shared payload.</p>
+    <p>When you use the QR/share flow, the public Open Wallet payload and preview fields are included in a static shared link. If you share one selected Question, its label, prompt, and public answer are also included so the receiver opens the same conversation context. Closed Wallet content and local source-evidence summaries are excluded. Anyone who receives the link can keep its public contents, and a shared static link cannot be revoked by the app.</p>
+    <p>The optional web preview is hosted on GitHub Pages. Open Wallet fields are placed in the URL fragment so browsers do not send those fields in the HTTP request to the host. GitHub may still process ordinary web-request metadata, such as IP address and browser information, under its own service policies.</p>
+
+    <h2>Storage and Controls</h2>
+    <p>Your profile and locally kept wallets remain on the device until you edit or remove them, reset the app data, or delete the app. You can change Photos, Contacts, Location, and Camera permissions in iOS Settings. Removing permission stops future access but does not automatically remove public text or tags that you previously applied to the Open Wallet.</p>
 
     <h2>Contact</h2>
     <p>For questions or support, use the <a href="https://github.com/blessing1031r-dotcom/identity-wallet-support/issues">support issue tracker</a>.</p>
