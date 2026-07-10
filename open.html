@@ -146,6 +146,55 @@
       gap: 12px;
       margin-top: 24px;
     }
+    .answer-compose {
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+    }
+    .answer-prompt {
+      margin: 0 0 20px;
+      color: var(--fg);
+      font-size: 22px;
+      font-weight: 750;
+      line-height: 1.3;
+      overflow-wrap: break-word;
+    }
+    .answer-field-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    textarea {
+      width: 100%;
+      min-height: 132px;
+      margin-top: 10px;
+      padding: 14px 0;
+      resize: vertical;
+      border: 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      outline: none;
+      background: transparent;
+      color: var(--fg);
+      font: inherit;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+    textarea:focus {
+      border-color: var(--bone);
+    }
+    .answer-actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 20px;
+    }
     .openers {
       margin-top: 24px;
     }
@@ -205,10 +254,16 @@
       text-decoration: none;
       text-transform: uppercase;
     }
-    a.button.primary {
+    a.button.primary,
+    button.primary {
       background: var(--accent);
       border-color: var(--accent);
       color: var(--ink);
+    }
+    a.button.disabled,
+    button:disabled {
+      cursor: default;
+      opacity: 0.42;
     }
     .note {
       margin-top: 20px;
@@ -276,7 +331,24 @@
       <div class="opener-list" id="opener-list"></div>
     </section>
 
+    <section class="answer-compose" id="answer-compose" hidden>
+      <p class="label">Answer This Question</p>
+      <p class="answer-prompt" id="answer-prompt"></p>
+      <label class="answer-field-label" for="answer-input">
+        <span>Your Answer</span>
+        <span id="answer-count">0/160</span>
+      </label>
+      <textarea id="answer-input" maxlength="160" rows="4"></textarea>
+      <p class="note">Nothing is added to your Open Wallet until you save in the app.</p>
+      <div class="answer-actions">
+        <a class="button primary disabled" id="continue-answer" href="#" aria-disabled="true">Continue in Identity Wallet</a>
+        <button type="button" id="copy-answer-link" disabled>Copy Answer Link</button>
+        <button type="button" id="cancel-answer">Cancel</button>
+      </div>
+    </section>
+
     <div class="actions">
+      <button class="primary" type="button" id="start-answer" hidden>Answer This Question</button>
       <a class="button primary" id="open-app" href="#">Open in Identity Wallet</a>
       <button type="button" id="copy-app-link">Copy App Link</button>
       <button type="button" id="copy-link">Copy Link</button>
@@ -292,6 +364,7 @@
     const legacyQueryParams = new URLSearchParams(window.location.search);
     const params = fragmentParams.has("payload") ? fragmentParams : legacyQueryParams;
     const payload = params.get("payload") || "";
+    const answerDraftParameter = "answer-draft";
     const questionPrompts = {
       Film: "好きな映画ある？",
       Book: "好きな本ある？",
@@ -668,19 +741,70 @@
       openerList.append(item);
     }
 
+    const startAnswer = document.getElementById("start-answer");
+    const answerCompose = document.getElementById("answer-compose");
+    const answerPrompt = document.getElementById("answer-prompt");
+    const answerInput = document.getElementById("answer-input");
+    const answerCount = document.getElementById("answer-count");
+    const continueAnswer = document.getElementById("continue-answer");
+    const copyAnswerLink = document.getElementById("copy-answer-link");
+    const cancelAnswer = document.getElementById("cancel-answer");
+    const canDraftAnswer = Boolean(focusedOpener) && !hasInvalidShare;
+    startAnswer.hidden = !canDraftAnswer;
+    answerPrompt.textContent = focusedOpener?.prompt || "";
+
+    function makeAppOpenURL(answerDraft = "") {
+      if (!payload || hasInvalidShare) return "";
+      const appItems = [["payload", payload]];
+      if (answerDraft) appItems.push([answerDraftParameter, answerDraft]);
+      return "identitywallet://open?" + appItems
+        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+        .join("&");
+    }
+
+    function updateAnswerDraft() {
+      const inputCharacters = [...answerInput.value];
+      if (inputCharacters.length > 160) {
+        answerInput.value = inputCharacters.slice(0, 160).join("");
+      }
+      answerCount.textContent = `${[...answerInput.value].length}/160`;
+      const draft = answerInput.value.trim();
+      const answerURL = draft ? makeAppOpenURL(draft) : "";
+      continueAnswer.href = answerURL || "#";
+      continueAnswer.classList.toggle("disabled", !answerURL);
+      continueAnswer.setAttribute("aria-disabled", answerURL ? "false" : "true");
+      copyAnswerLink.disabled = !answerURL;
+      return answerURL;
+    }
+
+    startAnswer.addEventListener("click", () => {
+      startAnswer.hidden = true;
+      answerCompose.hidden = false;
+      answerInput.focus();
+      answerCompose.scrollIntoView({ block: "start" });
+    });
+    answerInput.addEventListener("input", updateAnswerDraft);
+    continueAnswer.addEventListener("click", (event) => {
+      if (!updateAnswerDraft()) event.preventDefault();
+    });
+    cancelAnswer.addEventListener("click", () => {
+      answerInput.value = "";
+      updateAnswerDraft();
+      answerCompose.hidden = true;
+      startAnswer.hidden = !canDraftAnswer;
+      startAnswer.focus();
+    });
+
     if ((params.get("view") === "openers" || params.get("view") === "question" || focusedOpener) && openers.length > 0) {
       window.requestAnimationFrame(() => openerSection.scrollIntoView({ block: "start" }));
     }
 
     const openApp = document.getElementById("open-app");
     const copyAppLink = document.getElementById("copy-app-link");
-    let appOpenURL = "";
-    if (payload && !hasInvalidShare) {
-      const appItems = [["payload", payload]];
-      appOpenURL = "identitywallet://open?" + appItems
-        .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-        .join("&");
+    const appOpenURL = makeAppOpenURL();
+    if (appOpenURL) {
       openApp.href = appOpenURL;
+      openApp.classList.toggle("primary", !canDraftAnswer);
     } else {
       openApp.hidden = true;
       copyAppLink.hidden = true;
@@ -698,6 +822,11 @@
       if (appOpenURL) {
         await copyText(appOpenURL);
       }
+    });
+
+    copyAnswerLink.addEventListener("click", async () => {
+      const answerURL = updateAnswerDraft();
+      if (answerURL) await copyText(answerURL);
     });
 
     document.getElementById("copy-link").addEventListener("click", async () => {
