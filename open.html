@@ -17,6 +17,7 @@
       --accent: #c9ff3d;
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body {
       margin: 0;
       min-height: 100vh;
@@ -269,7 +270,7 @@
       <a class="button" href="./">Support</a>
     </div>
 
-    <p class="note">If the app does not open, copy the app link and paste it in Exchange. If the app is not installed, keep this page open as a lightweight preview.</p>
+    <p class="note" id="preview-note">If the app does not open, copy the app link and paste it in Exchange. If the app is not installed, keep this page open as a lightweight preview.</p>
   </main>
 
   <script>
@@ -279,16 +280,16 @@
     const params = fragmentParams.has("payload") ? fragmentParams : legacyQueryParams;
     const payload = params.get("payload") || "";
     const questionPrompts = {
-      Film: "最近映画見た？",
+      Film: "好きな映画ある？",
       Book: "好きな本ある？",
       Place: "よく行く場所ある？",
-      Music: "最近なに聴いてる？",
+      Music: "好きな音楽ある？",
       Tools: "最近よく使う道具は？",
-      Work: "仕事で削らないことは？",
+      Work: "どんな仕事してる？",
       Now: "最近、何に時間を使ってる？",
       Brand: "好きなブランドある？",
       Hobby: "休みの日なにしてる？",
-      Influence: "最近影響受けたものある？",
+      Influence: "影響を受けたものある？",
       Object: "持ち歩いてるものある？",
       Sunday: "理想の日曜ってどんな感じ？"
     };
@@ -333,7 +334,7 @@
         if (!isRecord(section) || typeof section.k !== "string" || typeof section.t !== "string" || !Array.isArray(section.i)) return null;
         const items = section.i.slice(0, 4).map((item) => {
           if (!isRecord(item) || typeof item.t !== "string") return null;
-          return { t: limit(item.t, 56) };
+          return { t: limit(item.t, 160) };
         });
         if (items.some((item) => item === null)) return null;
         return { k: section.k, t: limit(section.t, 72), i: items };
@@ -341,12 +342,12 @@
 
       const workItems = profile.w.slice(0, 12).map((item) => {
         if (!isRecord(item) || ![item.t, item.r, item.d].every((value) => typeof value === "string")) return null;
-        return { t: limit(item.t, 72), r: limit(item.r, 64), d: limit(item.d, 90) };
+        return { t: limit(item.t, 160), r: limit(item.r, 160), d: limit(item.d, 160) };
       });
 
       const hooks = profile.k.slice(0, 12).map((hook) => {
         if (!isRecord(hook) || typeof hook.p !== "string" || typeof hook.a !== "string") return null;
-        return { p: limit(hook.p, 72), a: limit(hook.a, 90) };
+        return { p: limit(hook.p, 72), a: limit(hook.a, 160) };
       });
 
       if ([...sections, ...workItems, ...hooks].some((item) => item === null)) return null;
@@ -474,10 +475,10 @@
     }
 
     function makePayloadOpeners(profile) {
-      const entries = [];
+      const fallbackEntries = [];
+      const explicitEntries = [];
       const normalize = (value) => (value || "").trim().toLowerCase().replace(/\s+/g, "");
-      const append = (entry) => {
-        if (entries.length >= 12) return;
+      const appendUnique = (entries, entry) => {
         const promptKey = normalize(entry.prompt);
         const labelKey = normalize(entry.label);
         if (!promptKey || entries.some((existing) => normalize(existing.prompt) === promptKey)) return;
@@ -492,7 +493,7 @@
         const titles = (section.i || []).map((item) => (item.t || "").trim()).filter(Boolean).slice(0, 4);
         if (!titles.length) return;
         const customTitle = (section.t || "").trim();
-        append({
+        appendUnique(fallbackEntries, {
           label: section.k === "custom" ? (customTitle || "Custom") : details.label,
           prompt: section.k === "custom" ? (customTitle ? `${customTitle}は？` : titles[0]) : details.prompt,
           answer: titles.join(" / ")
@@ -504,24 +505,45 @@
       const work = (profile?.w || []).find((item) => (item.t || "").trim() || (item.d || "").trim());
       if (work) {
         const answer = [work.t, work.r, work.d].map((value) => (value || "").trim()).filter(Boolean).slice(0, 3).join(" / ");
-        append({ label: "Work", prompt: questionPrompts.Work, answer });
+        appendUnique(fallbackEntries, { label: "Work", prompt: questionPrompts.Work, answer });
       }
 
       sections.filter((entry) => !entry.details.primary).forEach(appendSection);
 
       for (const hook of profile?.k || []) {
         const prompt = (hook.p || "").trim();
-        if (!prompt) continue;
-        append({
+        const answer = (hook.a || "").trim();
+        if (!prompt || !answer) continue;
+        appendUnique(explicitEntries, {
           label: hookLabel(prompt),
           prompt,
-          answer: (hook.a || "").trim() || (profile?.o || "").trim()
+          answer
         });
       }
 
-      if (!entries.length && (profile?.o || "").trim()) {
-        append({ label: "Line", prompt: "何をしている人？", answer: profile.o.trim() });
+      const consumedExplicitIndexes = new Set();
+      for (let index = 0; index < fallbackEntries.length; index += 1) {
+        const fallback = fallbackEntries[index];
+        const explicitIndex = explicitEntries.findIndex((entry, candidateIndex) => {
+          if (consumedExplicitIndexes.has(candidateIndex)) return false;
+          const samePrompt = normalize(entry.prompt) === normalize(fallback.prompt);
+          const labelKey = normalize(entry.label);
+          const sameLabel = labelKey !== "ask" && labelKey === normalize(fallback.label);
+          return samePrompt || sameLabel;
+        });
+        if (explicitIndex < 0) continue;
+        fallbackEntries[index] = explicitEntries[explicitIndex];
+        consumedExplicitIndexes.add(explicitIndex);
       }
+
+      const entries = [];
+      const appendFinal = (entry) => {
+        if (entries.length < 12) appendUnique(entries, entry);
+      };
+      explicitEntries.forEach((entry, index) => {
+        if (!consumedExplicitIndexes.has(index)) appendFinal(entry);
+      });
+      fallbackEntries.forEach(appendFinal);
       return entries;
     }
 
@@ -532,18 +554,21 @@
     const focusMatches = payloadOpeners.filter(
       (entry) => limit(entry.label, 14).toLowerCase() === embeddedFocusLabel.toLowerCase()
     );
-    const focusedOpener = embeddedFocusLabel && focusMatches.length === 1
+    const hasInvalidFocus = Boolean(embeddedFocusLabel) && focusMatches.length !== 1;
+    const focusedOpener = embeddedFocusLabel && !hasInvalidFocus
       ? { ...focusMatches[0], focused: true }
       : null;
-    const listedOpeners = payloadOpeners.map((entry) => ({ ...entry, focused: false }));
+    const listedOpeners = hasInvalidFocus
+      ? []
+      : payloadOpeners.map((entry) => ({ ...entry, focused: false }));
     const openers = focusedOpener ? [focusedOpener] : listedOpeners;
     const fields = {
-      name: compactProfile?.n || "",
-      handle: compactProfile?.h || "",
-      line: compactProfile?.o || "",
-      role: compactProfile?.r || "",
-      city: compactProfile?.c || "",
-      prompt: focusedOpener?.prompt || payloadOpeners[0]?.prompt || "Scan to open"
+      name: hasInvalidFocus ? "" : (compactProfile?.n || ""),
+      handle: hasInvalidFocus ? "" : (compactProfile?.h || ""),
+      line: hasInvalidFocus ? "" : (compactProfile?.o || ""),
+      role: hasInvalidFocus ? "" : (compactProfile?.r || ""),
+      city: hasInvalidFocus ? "" : (compactProfile?.c || ""),
+      prompt: hasInvalidFocus ? "" : (focusedOpener?.prompt || payloadOpeners[0]?.prompt || "Scan to open")
     };
 
     function setText(id, value) {
@@ -553,6 +578,10 @@
     const hasPreview = fields.name || fields.handle || fields.line || fields.role || fields.city;
     document.getElementById("preview").hidden = !hasPreview;
     document.getElementById("empty").hidden = hasPreview;
+    if (hasInvalidFocus) {
+      document.getElementById("empty").textContent = "This shared Question could not be opened.";
+      document.getElementById("preview-note").textContent = "Ask the sender to share this Question again.";
+    }
 
     setText("name", fields.name || "Open Wallet");
     setText("handle", fields.handle);
@@ -595,7 +624,7 @@
     const openApp = document.getElementById("open-app");
     const copyAppLink = document.getElementById("copy-app-link");
     let appOpenURL = "";
-    if (payload) {
+    if (payload && !hasInvalidFocus) {
       const appItems = [["payload", payload]];
       appOpenURL = "identitywallet://open?" + appItems
         .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
