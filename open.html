@@ -562,14 +562,44 @@
       return entries;
     }
 
+    function labelsMatch(left, right) {
+      return limit(left, 14).toLowerCase() === limit(right, 14).toLowerCase();
+    }
+
+    function rawFocusMatchCount(profile, focusLabel) {
+      const explicitMatches = (profile?.k || []).filter((hook) => {
+        const prompt = (hook.p || "").trim();
+        const answer = (hook.a || "").trim();
+        if (!prompt || !answer) return false;
+        const label = (hook.l || "").trim() || hookLabel(prompt);
+        return labelsMatch(label, focusLabel);
+      });
+      if (explicitMatches.length > 0) return explicitMatches.length;
+
+      let fallbackMatches = 0;
+      for (const section of profile?.e || []) {
+        const titles = (section.i || []).map((item) => (item.t || "").trim()).filter(Boolean);
+        if (!titles.length) continue;
+        const details = sectionDetails[section.k] || sectionDetails.custom;
+        const customTitle = (section.t || "").trim();
+        const label = section.k === "custom" ? (customTitle || "Custom") : details.label;
+        if (labelsMatch(label, focusLabel)) fallbackMatches += 1;
+      }
+      const work = (profile?.w || []).find((item) => (item.t || "").trim() || (item.d || "").trim());
+      if (work && labelsMatch("Work", focusLabel)) fallbackMatches += 1;
+      return fallbackMatches;
+    }
+
     const decodedPayload = await decodeOpenWalletPayload(payload);
     const compactProfile = decodedPayload?.p || null;
     const payloadOpeners = makePayloadOpeners(compactProfile);
     const embeddedFocusLabel = limit(decodedPayload?.f, 14);
     const focusMatches = payloadOpeners.filter(
-      (entry) => limit(entry.label, 14).toLowerCase() === embeddedFocusLabel.toLowerCase()
+      (entry) => labelsMatch(entry.label, embeddedFocusLabel)
     );
-    const hasInvalidFocus = Boolean(embeddedFocusLabel) && focusMatches.length !== 1;
+    const rawFocusMatches = rawFocusMatchCount(compactProfile, embeddedFocusLabel);
+    const hasInvalidFocus = Boolean(embeddedFocusLabel)
+      && (focusMatches.length !== 1 || rawFocusMatches !== 1);
     const focusedOpener = embeddedFocusLabel && !hasInvalidFocus
       ? { ...focusMatches[0], focused: true }
       : null;
