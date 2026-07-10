@@ -342,10 +342,12 @@
       if (!isRecord(profile)) return null;
       if (!["n", "h", "r", "c", "o"].every((key) => typeof profile[key] === "string")) return null;
       if (![profile.e, profile.w, profile.k].every(Array.isArray)) return null;
+      if ([profile.e, profile.w, profile.k].some((items) => items.length > 12)) return null;
 
-      const sections = profile.e.slice(0, 12).map((section) => {
+      const sections = profile.e.map((section) => {
         if (!isRecord(section) || typeof section.k !== "string" || typeof section.t !== "string" || !Array.isArray(section.i)) return null;
-        const items = section.i.slice(0, 4).map((item) => {
+        if (section.i.length > 4) return null;
+        const items = section.i.map((item) => {
           if (!isRecord(item) || typeof item.t !== "string") return null;
           return { t: limit(item.t, 160) };
         });
@@ -353,12 +355,12 @@
         return { k: section.k, t: limit(section.t, 72), i: items };
       });
 
-      const workItems = profile.w.slice(0, 12).map((item) => {
+      const workItems = profile.w.map((item) => {
         if (!isRecord(item) || ![item.t, item.r, item.d].every((value) => typeof value === "string")) return null;
         return { t: limit(item.t, 160), r: limit(item.r, 160), d: limit(item.d, 160) };
       });
 
-      const hooks = profile.k.slice(0, 12).map((hook) => {
+      const hooks = profile.k.map((hook) => {
         if (!isRecord(hook) || typeof hook.p !== "string" || typeof hook.a !== "string") return null;
         if (hook.l !== undefined && typeof hook.l !== "string") return null;
         return { p: limit(hook.p, 72), a: limit(hook.a, 160), l: limit(hook.l, 14) };
@@ -591,6 +593,7 @@
     }
 
     const decodedPayload = await decodeOpenWalletPayload(payload);
+    const hasInvalidPayload = Boolean(payload) && !decodedPayload;
     const compactProfile = decodedPayload?.p || null;
     const payloadOpeners = makePayloadOpeners(compactProfile);
     const embeddedFocusLabel = limit(decodedPayload?.f, 14);
@@ -600,20 +603,21 @@
     const rawFocusMatches = rawFocusMatchCount(compactProfile, embeddedFocusLabel);
     const hasInvalidFocus = Boolean(embeddedFocusLabel)
       && (focusMatches.length !== 1 || rawFocusMatches !== 1);
-    const focusedOpener = embeddedFocusLabel && !hasInvalidFocus
+    const hasInvalidShare = hasInvalidPayload || hasInvalidFocus;
+    const focusedOpener = embeddedFocusLabel && !hasInvalidShare
       ? { ...focusMatches[0], focused: true }
       : null;
-    const listedOpeners = hasInvalidFocus
+    const listedOpeners = hasInvalidShare
       ? []
       : payloadOpeners.map((entry) => ({ ...entry, focused: false }));
     const openers = focusedOpener ? [focusedOpener] : listedOpeners;
     const fields = {
-      name: hasInvalidFocus ? "" : (compactProfile?.n || ""),
-      handle: hasInvalidFocus ? "" : (compactProfile?.h || ""),
-      line: hasInvalidFocus ? "" : (compactProfile?.o || ""),
-      role: hasInvalidFocus ? "" : (compactProfile?.r || ""),
-      city: hasInvalidFocus ? "" : (compactProfile?.c || ""),
-      prompt: hasInvalidFocus ? "" : (focusedOpener?.prompt || payloadOpeners[0]?.prompt || "Scan to open")
+      name: hasInvalidShare ? "" : (compactProfile?.n || ""),
+      handle: hasInvalidShare ? "" : (compactProfile?.h || ""),
+      line: hasInvalidShare ? "" : (compactProfile?.o || ""),
+      role: hasInvalidShare ? "" : (compactProfile?.r || ""),
+      city: hasInvalidShare ? "" : (compactProfile?.c || ""),
+      prompt: hasInvalidShare ? "" : (focusedOpener?.prompt || payloadOpeners[0]?.prompt || "Scan to open")
     };
 
     function setText(id, value) {
@@ -623,9 +627,11 @@
     const hasPreview = fields.name || fields.handle || fields.line || fields.role || fields.city;
     document.getElementById("preview").hidden = !hasPreview;
     document.getElementById("empty").hidden = hasPreview;
-    if (hasInvalidFocus) {
-      document.getElementById("empty").textContent = "This shared Question could not be opened.";
-      document.getElementById("preview-note").textContent = "Ask the sender to share this Question again.";
+    if (hasInvalidShare) {
+      document.getElementById("empty").textContent = hasInvalidFocus
+        ? "This shared Question could not be opened."
+        : "This shared Open Wallet could not be opened.";
+      document.getElementById("preview-note").textContent = "Ask the sender to share this link again.";
     }
 
     setText("name", fields.name || "Open Wallet");
@@ -669,7 +675,7 @@
     const openApp = document.getElementById("open-app");
     const copyAppLink = document.getElementById("copy-app-link");
     let appOpenURL = "";
-    if (payload && !hasInvalidFocus) {
+    if (payload && !hasInvalidShare) {
       const appItems = [["payload", payload]];
       appOpenURL = "identitywallet://open?" + appItems
         .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
