@@ -347,7 +347,8 @@
 
       const hooks = profile.k.slice(0, 12).map((hook) => {
         if (!isRecord(hook) || typeof hook.p !== "string" || typeof hook.a !== "string") return null;
-        return { p: limit(hook.p, 72), a: limit(hook.a, 160) };
+        if (hook.l !== undefined && typeof hook.l !== "string") return null;
+        return { p: limit(hook.p, 72), a: limit(hook.a, 160), l: limit(hook.l, 14) };
       });
 
       if ([...sections, ...workItems, ...hooks].some((item) => item === null)) return null;
@@ -392,7 +393,8 @@
         })),
         k: profile.conversationHooks.map((hook) => ({
           p: hook?.prompt,
-          a: hook?.answer
+          a: hook?.answer,
+          l: hook?.questionLabel
         }))
       });
     }
@@ -515,7 +517,7 @@
         const answer = (hook.a || "").trim();
         if (!prompt || !answer) continue;
         appendUnique(explicitEntries, {
-          label: hookLabel(prompt),
+          label: (hook.l || "").trim() || hookLabel(prompt),
           prompt,
           answer
         });
