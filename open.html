@@ -593,7 +593,7 @@
       if (!isRecord(value)) return null;
       if (value.v === 1) {
         if (!isISO8601Date(value.x)) return null;
-        if (value.f !== undefined && typeof value.f !== "string") return null;
+        if (!isOptionalString(value.f)) return null;
         const profile = normalizeCompactProfile(value.p);
         return profile ? { v: 1, p: profile, f: limit(value.f, 14) } : null;
       }
