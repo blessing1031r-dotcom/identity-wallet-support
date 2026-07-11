@@ -594,6 +594,7 @@
       if (value.v === 1) {
         if (!isISO8601Date(value.x)) return null;
         if (!isOptionalString(value.f)) return null;
+        if (typeof value.f === "string" && !value.f.trim()) return null;
         const profile = normalizeCompactProfile(value.p);
         return profile ? { v: 1, p: profile, f: limit(value.f, 14) } : null;
       }
@@ -629,7 +630,7 @@
         } else if (bytes.byteLength > maximumDecodedPayloadBytes) {
           return null;
         }
-        return normalizeDecodedPayload(JSON.parse(new TextDecoder().decode(bytes)));
+        return normalizeDecodedPayload(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
       } catch (_) {
         return null;
       }
